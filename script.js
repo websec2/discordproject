@@ -32,16 +32,22 @@ let msg = document.getElementById('msg')
 let sub = document.getElementById('sub')
 let chats = document.getElementById('chats')
 let users = document.getElementById('users')
+let listChats = document.getElementById('listofChats')
 let displayname = document.getElementById('display')
 let auth = fbauth.getAuth(app);
 let useremail = ''
 let userId = ''
 let uid = ''
+let chatId = ''
+let numChats = 1;
+let currentChat = 'Chat2'
 
 let sendMsg = () => {
+  console.log(currentChat)
   let displayRef = rtdb.ref(db, `/users/${userId}/`)
+  let channelRef = rtdb.ref(db, "/channels/" + currentChat + "/messages");
   rtdb.onValue(displayRef, ss => {
-    rtdb.push(titleRef, {
+    rtdb.push(channelRef, {
       msg: msg.value,
       user: ss.val().displayName
     })
@@ -54,17 +60,99 @@ $("#login").on("click", ()=>{
   let pwd = $("#logpass").val();
   fbauth.signInWithEmailAndPassword(auth, email, pwd).then(
     somedata=>{
-      console.log(somedata);
     }).catch(function(error) {
       var errorMessage = error.message;
       alert(errorMessage);
     });
 });
 let renderUser = function(userObj){
-  $("#app").append(`<button type="button" id="logout">Logout</button>`);
+  $("#app").append(`<button type="button" id="logout">Logout</button> <button id='newChat'>New Chat</button>`);
+  $('#newChat').on("click", () => {
+    numChats += 1;
+    let chatName = "Chat" + numChats
+    let channelRef = rtdb.ref(db, "/channels/" + chatName)
+    rtdb.set(channelRef, {
+      channelName: `Chat#${numChats}`})
+  })
   $("#logout").on("click", ()=>{
     fbauth.signOut(auth);
   })
+}
+let renderChats = function() {
+  $('#allChats').append(`<ul id=chats></ul> <br>
+  <input id=msg type="text" placeholder='Enter Message'> <br>
+  <button id=sub >Submit</button>`)
+}
+let renderlistUsers = function() {
+  rtdb.onValue(usersRef, ss=>{
+        let val = ss.val()
+        users.innerHTML = ''
+        for (let uid in val) {
+          let user = document.createElement('li');
+          users.appendChild(user)
+          user.innerText = val[uid].email
+        }
+        })
+}
+                     
+let renderChannels = function() {
+  let channelRef = rtdb.ref(db, `/channels/`)
+  let checkUser = rtdb.ref(db, `/users/${userId}/roles`)
+        rtdb.onValue(channelRef, ss => {
+          let val = ss.val()
+          listChats.innerHTML = ''
+          for (let channel in val) {
+            $('#listofChats').append(`<li id=${channel}>${val[channel].channelName}</li>`)
+          }
+          $("#listofChats li").click(function() {
+            currentChat = $(this).attr('id')
+            let channelRef = rtdb.ref(db, "/channels/" + currentChat)
+            rtdb.onValue(channelRef, ss=>{
+              let channel = ss.val().messages
+               $('#chats').empty();   
+              rtdb.onValue(checkUser, ss=>{
+                let role = ss.val()
+                if (role.admin == true) {
+              for (let message in channel) {
+                $("#chats").append(`<li><button class='del' data-id=${message}>X</button><button id='edit' class='edit' data-id=${message} data-message=${channel[message].msg}>Edit</button> ${channel[message].user}: ${channel[message].msg}</li> <input class='editInput' data-input=${message} />`);
+              }
+              }
+                else {
+                   let check = rtdb.ref(db, `/users/${userId}/`)
+                    for (let message in channel) {
+                      rtdb.onValue(check, ss => {
+                      if (ss.val().displayName == channel[message].user) {
+                        $("#chats").append(`<li><button class='del' data-id=${message}>X</button> <button id='edit' class='edit' data-id=${message} data-message=${channel[message].msg}>Edit</button> ${channel[message].user}: ${channel[message].msg}</li> <input class='editInput' data-input=${message} />`);
+                      }
+                      else {
+                        $("#chats").append(`<li>${channel[message].user}: ${channel[message].msg}</li>`);
+                      }
+                      })
+                      }
+           }
+            })
+            })
+            $(".del").click(function () {
+            let chatId = $(this).attr('data-id')
+            let chatRef = rtdb.ref(db, `/channels/${currentChat}/messages/${chatId}`)
+            rtdb.remove(chatRef)
+      })
+          $(".edit").click(function () {
+            let chatId = $(this).attr('data-id')
+            let input = $(this).attr('data-input')
+           $(`input[data-input=${chatId}]`).removeClass('editInput')
+            let chatRef = rtdb.ref(db, `/channels/${currentChat}/messages/${chatId}`)
+            $(`input[data-input=${chatId}]`).on("keyup", function(e) {
+                if(e.which == 13) {
+                  rtdb.update(chatRef, {
+                    msg: $(this).val()
+                  })
+                  $(`input[data-input=${chatId}]`).addClass('editInput')
+                }
+            });
+      })
+         });
+        })
 }
 fbauth.onAuthStateChanged(auth, user => {
       if (!!user){
@@ -77,55 +165,11 @@ fbauth.onAuthStateChanged(auth, user => {
         useremail = user.email;
         userId = user.uid
         renderUser(user);
-        rtdb.onValue(titleRef, ss=>{
-        let val = ss.val()
+        let channelRef = rtdb.ref(db, "/channels/" + currentChat + "/messages");
         let checkUser = rtdb.ref(db, `/users/${userId}/roles`)
+        renderChannels()
         chats.innerHTML = ''
-        rtdb.onValue(checkUser, ss => {
-          let role = ss.val();
-          if (role.admin == true) {
-            for (let chat in val) {
-              $("#chats").append(`<li><button class='del' data-id=${chat}> X</button><button id='edit' class='edit' data-id=${chat} data-message=${val[chat].msg}>Edit</button> ${val[chat].user}: ${val[chat].msg}</li>`);
-              }
-          }
-          else {
-            let check = rtdb.ref(db, `/users/${userId}/`)
-            for (let chat in val) {
-              rtdb.onValue(check, ss => {
-              if (ss.val().displayName == val[chat].user) {
-                $("#chats").append(`<li><button class='del' data-id=${chat}>X</button> <button id='edit' class='edit' data-id=${chat} data-message=${val[chat].msg}>Edit</button> ${val[chat].user}: ${val[chat].msg}</li>`);
-              }
-              else {
-                $("#chats").append(`<li>${val[chat].user}: ${val[chat].msg}</li>`);
-              }
-                })
-            }
-          }
-          $(".del").click(function () {
-            let chatId = $(this).attr('data-id')
-            let chatRef = rtdb.ref(db, `/chats/${chatId}`)
-            rtdb.remove(chatRef)
-      })
-          $(".edit").click(function () {
-            let chatId = $(this).attr('data-id')
-            let message = $(this).attr('data-message')
-            //$('#msg').val(message)
-            let chatRef = rtdb.ref(db, `/chats/${chatId}`)
-            rtdb.update(chatRef, {
-            msg: msg.value
-          })
-      })
-        })
-        rtdb.onValue(usersRef, ss=>{
-        let val = ss.val()
-        users.innerHTML = ''
-        for (let uid in val) {
-          let user = document.createElement('li');
-          users.appendChild(user)
-          user.innerText = val[uid].email
-        }
-        })
-      });
+        renderlistUsers()
       } else {
         $(".login").show();
         $(".register").hide()

@@ -113,3 +113,11 @@ button:hover {
 .editInput {
   display: none;
 }
+
+.editInputUser {
+  display: none;
+}
+
+.hidden {
+  display: none;
+}
